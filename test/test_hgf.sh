@@ -17,5 +17,13 @@ if ! echo "$prompt_output" | grep -q "TDD"; then
   exit 1
 fi
 
+# 3. Check dry-run / prepare prompt file
+temp_prompt=$(./bin/hgf prepare-prompt 1 2>&1 || true)
+if [ ! -f "$temp_prompt" ]; then
+  echo "FAIL: bin/hgf prepare-prompt did not return a valid file path" >&2
+  exit 1
+fi
+rm -f "$temp_prompt"
+
 echo "All hgf basic tests passed."
 exit 0
