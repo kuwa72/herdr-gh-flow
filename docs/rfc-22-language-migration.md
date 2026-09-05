@@ -84,24 +84,34 @@
 
 ## 4. TUI ライブラリ選定
 
-### 4.1 Go: `charmbracelet/bubbletea` + `bubbles`
+### 4.1 採用: `koki-develop/go-fzf`
 
-- **アーキテクチャ**: The ELM Architecture（Model-Update-View）を採用。状態遷移が明示的でテストしやすい。
-- **既存 UX の再現**:
-  - `bubbles/list` で Issue 一覧
-  - `bubbles/viewport` でプレビュー（右ペイン相当）
-  - `lipgloss` でスタイリング
-- **キー割当**: `--expect` 相当のカスタムキーバインド（Enter, Ctrl-D, Ctrl-O 等）を `Update` 内で実装。
-- **テスト**: `tea.Program` に `tea.WithInput` / `tea.WithOutput` を渡して入出力を制御可能。必要に応じ `charmbracelet/x/exp/teatest` 等のテスト支援ライブラリを検討。
+`fzf` を外部コマンドとして呼び出すのではなく、Go 製の fzf 系ライブラリを組み込む。
 
-### 4.2 Rust: `ratatui`
+- **ライブラリ**: `github.com/koki-develop/go-fzf`
+- **ベース**: `charmbracelet/bubbletea`
+- **選択 UI**: `fzf.Find` で Issue 一覧のあいまい検索 + 選択
+- **プレビュー**: `fzf.WithPreviewWindow` で Issue 本文を表示（`gh issue view` 相当）
+- **カスタムキー**: `fzf.WithKeyMap` で以下を設定
+  - `[Enter]` → デフォルトエージェント `agy`
+  - `[Ctrl-D]` → `devin`
+  - `[Ctrl-O]` → `opencode`
+  - `[Esc]` / `[Ctrl-C]` → 中止
+- **配布上の利点**: 単一バイナリに `fzf` 相当の選択 UI が内包され、ユーザー側への `fzf` インストール要求がなくなる
+- **テスト**: `IssueSelector` 等のインターフェースを介して `go-fzf` をラップし、テスト時には選択結果を固定値で返すフェイクに差し替え
 
-- **アーキテクチャ**: 即時モード（immediate mode）TUI。高度なカスタムレイアウトに強い。
-- **テスト**: レンダリング出力の文字列比較は可能だが、イベント駆動の状態遷移テストは Go/bubbletea より煩雑。
+### 4.2 代替候補
+
+| ライブラリ | メンテナンス | カスタムキー | 備考 |
+|---|---|---|---|
+| `ktr0731/go-fuzzyfinder` | ◎ 活発（v0.9.0: 2025-04） | ✕ 非公開 / 制限あり | Issue 選択には問題ないが、エージェント同時選択 UX を再現できない |
+| `charmbracelet/bubbles/list` + 自前フィルタ | ◎ 公式 | ◎ 完全自由 | 最も柔軟だが、あいまい検索・プレビュー・キー割り当てを自前で組む必要があり初期工数が大きい |
 
 ### 4.3 結論
 
-組み込み TUI には **`charmbracelet/bubbletea` + `bubbles` + `lipgloss`** を採用する。ELM アーキテクチャは `fzf` のプレビュー+選択 UX を型安全かつテスト可能に再実装するのに適している。
+**`koki-develop/go-fzf` を採用する。**
+
+既行の `fzf --expect` ベース UX（Issue 選択と同時にエージェントを決定）を、外部コマンド呼び出しをせずにそのまま再現できる。bubbletea ベースであるため、将来的に `bubbles/list` 等への置き換えも容易。
 
 ---
 
@@ -198,8 +208,8 @@ type PromptBuilder interface {
    - `core` の振る舞いはこれらのフェイクに対してユニットテスト。
 
 2. **TUI テスト**
-   - `bubbletea` の `tea.Program` に `WithInput`/`WithOutput` を指定し、キー入力シーケンスと最終出力をアサート。
-   - 極力ビジネスロジックは `Update` 関数の純粋関数部分に分離し、状態遷移を直接テスト。
+   - `IssueSelector` 等のインターフェースを介して `go-fzf` をラップし、テスト時は固定値を返すフェイク実装を注入。
+   - `go-fzf` 本体のレンダリングはライブラリ側の責務とし、`hgf` 側では「Issue 一覧 + キー入力 → 選択結果 + エージェント名」の振る舞いをアサート。
 
 3. **外部コマンドの振る舞いテスト**
    - `herdr`, `gh`, `agy` 等を一時ディレクトリにダミースクリプトとして配置し、`PATH` を注入。
@@ -216,7 +226,7 @@ type PromptBuilder interface {
 | :--- | :--- |
 | **0** | RFC 承認（本ドキュメント） |
 | **1** | `go.mod` 作成、`internal/ports`・`internal/adapters` 整備、`gh`/`herdr`/`agent` の Adapter をテスト込みで実装 |
-| **2** | `internal/tui` を `bubbletea` で実装。`fzf` からの段階的移行（環境変数 or フラグで切り替え） |
+| **2** | `internal/tui` を `go-fzf` で実装。外部 `fzf` コマンドへの依存を廃止し、既存 UX（[Enter]=agy, [Ctrl-D]=devin, [Ctrl-O]=opencode）をそのまま内包 |
 | **3** | `cmd/hgf` 完成、`bin/hgf` を Go バイナリに置き換え、`test/run-tests.sh` を `go test` 中心に更新 |
 | **4** | `gh extension` 用エントリポイント追加、配布・CI 整備（#26 連携） |
 
@@ -225,7 +235,7 @@ type PromptBuilder interface {
 ## 9. 決定事項
 
 1. **実装言語**: Go
-2. **TUI ライブラリ**: `charmbracelet/bubbletea` + `bubbles` + `lipgloss`
+2. **TUI ライブラリ**: `koki-develop/go-fzf`（bubbletea ベースの fzf 系選択 UI ライブラリ）
 3. **外部 CLI 抽象化**: `internal/ports` に `IssueService`, `PaneManager`, `AgentLauncher`, `PromptBuilder` 等を定義し、Adapter パターンで実装
 4. **テスト方針**: インターフェースモック + ダミーコマンド PATH 注入 + golden ファイル
 5. **配布前提**: 単一静的バイナリ、`gh extension` 機構との親和性を重視
@@ -235,6 +245,6 @@ type PromptBuilder interface {
 ## 10. 親Issue #16 へのインプット
 
 - **技術基盤**: シングルバイナリ（Go）による `hgf` 再実装が可能であること。
-- **UX 基盤**: `fzf` 依存を脱却し、組み込み TUI（bubbletea）で左右マルチペイン・Human-in-the-loop 体験を再現可能。
+- **UX 基盤**: `fzf` 外部コマンド依存を脱却し、`go-fzf` による組み込み選択 UI で Issue 一覧・プレビュー・エージェント同時選択を再現可能。
 - **提供形態**: `gh extension` との親和性が高く、GitHub Releases / Homebrew 等への配布も容易。
 - **後続検討事項**: ブランチ命名規約・プロンプトテンプレート・エージェント選択キーの詳細は #25, #26 で詰める。
