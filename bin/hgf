@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# bin/hgf - herdr-gh-flow CLI
+
+print_help() {
+  cat <<'EOF'
+Usage: hgf [COMMAND] [OPTIONS]
+
+Commands:
+  (default)          List GitHub issues interactively (fzf) and start working
+  work <issue_no>    Start working on an issue by number
+  prompt <issue_no>  Generate the TDD task prompt for the specified issue
+  ci-wait [pr_no]    Wait for PR CI checks to complete
+
+Options:
+  --agent <name>     Specify coding agent (agy, claude, codex, devin, gemini)
+  -h, --help         Show this help message
+EOF
+}
+
+DEFAULT_AGENT="agy"
+
+build_prompt() {
+  local issue_no="$1"
+  local issue_json
+  issue_json=$(gh issue view "$issue_no" --json number,title,body 2>/dev/null) || {
+    echo "Error: Issue #${issue_no} not found." >&2
+    exit 1
+  }
+
+  local title body
+  title=$(echo "$issue_json" | jq -r .title)
+  body=$(echo "$issue_json" | jq -r .body)
+
+  cat <<EOF
+あなたはコーディングエージェントです。以下の GitHub Issue に着手してください。
+
+【Issue #${issue_no}: ${title}】
+${body}
+
+【必須開発フロー (TDD & Auto-merge)】
+1. AGENTS.md の指示に従ってください。
+2. まず \`test/\` 配下に失敗するテストを追加し、テストが失敗すること（Red）を確認してください。
+3. 最小限の実装を行い、テストが成功すること（Green）を確認してください。
+4. \`./test/run-tests.sh\` が全件パスすることを確認してください。
+5. 作業が完了したら \`gh pr create --fill\` で PR を作成してください。
+6. \`bin/ci-wait\` を実行して CI の完了を確認し、PR をマージ（\`gh pr merge --squash\`）して Issue を close してください。
+EOF
+}
+
+select_issue() {
+  if command -v fzf >/dev/null 2>&1; then
+    gh issue list --state open --limit 50 --json number,title,labels \
+      --template '{{range .}}#{{.number}} {{.title}} {{range .labels}}[{{.name}}]{{end}}{{"\n"}}{{end}}' \
+      | fzf --prompt="Select Issue > " \
+            --preview "gh issue view {1}" \
+            --preview-window="right:60%:wrap" \
+      | awk '{print $1}' | tr -d '#'
+  else
+    gh issue list --state open
+    echo -n "Enter Issue number: "
+    read -r chosen
+    echo "$chosen"
+  fi
+}
+
+start_work() {
+  local issue_no="$1"
+  local agent="${2:-$DEFAULT_AGENT}"
+
+  if [ -z "$issue_no" ]; then
+    issue_no=$(select_issue)
+  fi
+
+  if [ -z "$issue_no" ]; then
+    echo "No issue selected."
+    exit 0
+  fi
+
+  local title_slug
+  title_slug=$(gh issue view "$issue_no" --json title -q .title | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9' '-' | sed 's/^-//;s/-$//' | cut -c1-30)
+  local branch_name="issue/${issue_no}-${title_slug}"
+
+  echo "Switching to branch: ${branch_name}"
+  git checkout -B "${branch_name}"
+
+  local prompt_text
+  prompt_text=$(build_prompt "$issue_no")
+
+  if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
+    echo "Starting agent '${agent}' in a new Herdr pane..."
+    herdr pane split --direction right --ratio 0.5
+    herdr agent start "$agent" || true
+    herdr agent prompt "$agent" "$prompt_text" || true
+  else
+    echo "Launching agent '${agent}'..."
+    case "$agent" in
+      agy)
+        agy "$prompt_text" || true
+        ;;
+      claude)
+        claude -p "$prompt_text" || true
+        ;;
+      codex)
+        codex prompt "$prompt_text" || true
+        ;;
+      devin)
+        devin "$prompt_text" || true
+        ;;
+      *)
+        echo "Agent ${agent} prompt:"
+        echo "$prompt_text"
+        ;;
+    esac
+  fi
+}
+
+# Main routing
+cmd="${1:-}"
+case "$cmd" in
+  -h|--help)
+    print_help
+    exit 0
+    ;;
+  prompt)
+    issue_no="${2:-}"
+    [ -n "$issue_no" ] || { echo "Usage: hgf prompt <issue_no>" >&2; exit 1; }
+    build_prompt "$issue_no"
+    exit 0
+    ;;
+  ci-wait)
+    shift
+    exec "$(dirname "$0")/ci-wait" "$@"
+    ;;
+  work)
+    shift
+    issue_no="${1:-}"
+    shift || true
+    agent="$DEFAULT_AGENT"
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --agent)
+          agent="$2"
+          shift 2
+          ;;
+        *)
+          shift
+          ;;
+      esac
+    done
+    start_work "$issue_no" "$agent"
+    ;;
+  "")
+    start_work "" "$DEFAULT_AGENT"
+    ;;
+  *)
+    print_help
+    exit 1
+    ;;
+esac
