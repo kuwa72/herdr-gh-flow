@@ -31,6 +31,16 @@
 - **Issue選択時**: `gh issue list` + `fzf` により、右側 60% のプレビュー領域で Issue 本文・ラベルを確認しながら選択。
 - **エージェント起動時**: `herdr pane split --direction right --ratio 0.5` で右ペインを作成し、指定エージェント（agy, claude, codex, devin 等）を起動してプロンプトを自動送信。
 
+#### 3.2.1 fzf のキーバインドと画面上ガイド表示 (`--expect` & `--header`)
+Issue一覧から2段階の選択（Issue選定→エージェント選定）を挟まず、1アクションで直感的に起動できるようにする：
+- **常時キーガイド表示**: `--header` および `--header-first` を使用し、検索窓の直下に各キーの割り当てを固定表示（暗記不要）。
+- **キー別のアクション発火 (`--expect`)**:
+  - `[Enter]`: デフォルトエージェント（`agy`）で通常TDD開発
+  - `[Ctrl-C]`: `claude` を指定して起動（複雑なタスク向け）
+  - `[Ctrl-X]`: `codex` を指定して起動（軽量・高速タスク向け）
+  - `[Ctrl-W]`: `git worktree` による分離ディレクトリで起動
+  - `[Ctrl-O]`: ブラウザ（`gh issue view --web`）で開く
+
 ### 3.3 堅牢な CI 待機 & マージ
 - **`bin/ci-wait`**:
   - `xyzzy/tools/ci-wait.sh` の知見を導入。
