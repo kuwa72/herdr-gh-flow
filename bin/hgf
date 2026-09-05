@@ -131,25 +131,31 @@ start_work() {
   echo "Prompt generated at: ${prompt_file}"
 
   if [ "${HERDR_ENV:-}" = "1" ] && command -v herdr >/dev/null 2>&1; then
-    echo "Creating split pane in Herdr for agent '${agent}'..."
-    herdr pane split --direction right --ratio 0.5
+    local split_json new_pane_id
+    split_json=$(herdr pane split --direction right --ratio 0.5)
+    new_pane_id=$(echo "$split_json" | jq -r '.result.pane.pane_id // empty')
+
+    if [ -z "$new_pane_id" ]; then
+      echo "Error: Failed to get new pane_id from herdr pane split." >&2
+      exit 1
+    fi
 
     # ユーザーがエージェント画面で確認・編集して [Enter] を押せるよう、シェル上でコマンド文字列を入力状態にする
     case "$agent" in
       agy)
-        herdr pane send-text --current "agy "$(cat ${prompt_file})""
+        herdr pane send-text "$new_pane_id" "agy \"$prompt_text\""
         ;;
       devin)
-        herdr pane send-text --current "devin "$(cat ${prompt_file})""
+        herdr pane send-text "$new_pane_id" "devin \"$prompt_text\""
         ;;
       opencode)
-        herdr pane send-text --current "opencode "$(cat ${prompt_file})""
+        herdr pane send-text "$new_pane_id" "opencode \"$prompt_text\""
         ;;
       *)
-        herdr pane send-text --current "${agent} "$(cat ${prompt_file})""
+        herdr pane send-text "$new_pane_id" "${agent} \"$prompt_text\""
         ;;
     esac
-    echo "Agent command prepared in right pane. Please review and press [Enter] to run."
+    echo "Agent command prepared in pane '${new_pane_id}'. Please review and press [Enter] to run."
   else
     echo "Launching agent '${agent}' in current terminal..."
     case "$agent" in
