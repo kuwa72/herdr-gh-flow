@@ -12,5 +12,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Run test suite
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ./test/run-tests.sh
