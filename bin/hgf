@@ -62,15 +62,19 @@ select_issue() {
   local agent="$DEFAULT_AGENT"
   if command -v fzf >/dev/null 2>&1; then
     local header="Keys: [Enter] agy | [Ctrl-D] devin | [Ctrl-O] opencode"
-    local output
-    output=$(gh issue list --state open --limit 50 --json number,title,labels \
+    local fzf_result output
+    fzf_result=$(mktemp "/tmp/hgf-fzf-XXXXXX.txt")
+    gh issue list --state open --limit 50 --json number,title,labels \
       --template '{{range .}}#{{.number}} {{.title}} {{range .labels}}[{{.name}}]{{end}}{{"\n"}}{{end}}' \
       | fzf --prompt="Select Issue > " \
             --header="$header" \
             --header-first \
             --expect="ctrl-d,ctrl-o" \
             --preview "gh issue view {1}" \
-            --preview-window="right:60%:wrap" < /dev/tty || true)
+            --preview-window="right:60%:wrap" > "$fzf_result" || true
+
+    output=$(cat "$fzf_result")
+    rm -f "$fzf_result"
 
     local key
     key=$(echo "$output" | head -n 1)
