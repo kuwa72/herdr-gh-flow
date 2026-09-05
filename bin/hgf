@@ -143,7 +143,7 @@ start_work() {
     # ユーザーがエージェント画面で確認・編集して [Enter] を押せるよう、シェル上でコマンド文字列を入力状態にする
     case "$agent" in
       agy)
-        herdr pane send-text "$new_pane_id" "agy \"$prompt_text\""
+        herdr pane send-text "$new_pane_id" "agy -i \"$prompt_text\""
         ;;
       devin)
         herdr pane send-text "$new_pane_id" "devin \"$prompt_text\""
@@ -160,7 +160,7 @@ start_work() {
     echo "Launching agent '${agent}' in current terminal..."
     case "$agent" in
       agy)
-        agy "$prompt_text" || true
+        agy -i "$prompt_text" || true
         ;;
       devin)
         devin "$prompt_text" || true
