@@ -1,0 +1,93 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# tools/ci-wait.sh 互換の堅牢な CI 待機スクリプト
+pr=${1:-}
+if [ -z "$pr" ]; then
+  pr=$(gh pr view --json number -q .number 2>/dev/null) || {
+    echo "ci-wait: このブランチに PR がありません。番号を指定してください。" >&2
+    exit 2
+  }
+fi
+
+limit=${CI_WAIT_TIMEOUT:-1800}
+echo "ci-wait: PR #${pr} のチェックを待機します (最大 ${limit}s)"
+
+no_checks_p() {
+  gh pr checks "$pr" 2>&1 | grep -q 'no checks reported'
+}
+
+failed_checks() {
+  gh pr checks "$pr" --json bucket,name \
+    -q '.[] | select(.bucket == "fail" or .bucket == "cancel") | .name' 2>/dev/null
+}
+
+# 衝突チェック (GitHub の非同期判定待ち考慮)
+mergeable=""
+for _ in {1..6}; do
+  mergeable=$(gh pr view "$pr" --json mergeable -q .mergeable 2>/dev/null || true)
+  case "$mergeable" in
+    MERGEABLE) break ;;
+    CONFLICTING|UNKNOWN|"") sleep 5 ;;
+    *) break ;;
+  esac
+done
+
+if [ "$mergeable" = "CONFLICTING" ]; then
+  echo "ci-wait: PR #${pr} はコンフリクトしています。チェックは走りません。" >&2
+  exit 2
+fi
+
+deadline=$(( $(date +%s) + limit ))
+announced=0
+rc=1
+
+while :; do
+  now=$(date +%s)
+  [ "$now" -ge "$deadline" ] && { rc=124; break; }
+
+  if no_checks_p; then
+    if [ "$announced" -eq 0 ]; then
+      echo "ci-wait: チェックがまだ登録されていません。待機中..."
+      announced=1
+    fi
+    sleep 10
+    continue
+  fi
+
+  set +e
+  timeout "$((deadline - now))" gh pr checks "$pr" --watch --fail-fast --interval 15 >/dev/null 2>&1
+  rc=$?
+  set -e
+
+  if no_checks_p; then
+    announced=0
+    continue
+  fi
+
+  if [ "$rc" -ne 0 ] && [ -z "$(failed_checks)" ]; then
+    echo "ci-wait: チェックが再作成されました。再待機中..."
+    announced=0
+    sleep 10
+    continue
+  fi
+  break
+done
+
+if [ "$rc" -eq 124 ]; then
+  echo "ci-wait: タイムアウト (${limit}s)"
+  gh pr checks "$pr" || true
+  exit 2
+fi
+
+echo ""
+echo "===== CI チェック結果 ====="
+gh pr checks "$pr" || true
+
+if [ "$rc" -eq 0 ]; then
+  echo "ci-wait: 全チェック成功。"
+  exit 0
+else
+  echo "ci-wait: 失敗したチェックがあります。"
+  exit 1
+fi

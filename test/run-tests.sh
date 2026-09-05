@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "=== Running tests ==="
+success=0
+total=0
+
+for test_file in test/test_*.sh; do
+  [ -f "$test_file" ] || continue
+  total=$((total + 1))
+  echo -n "Testing ${test_file}... "
+  if bash "$test_file"; then
+    echo "PASS"
+    success=$((success + 1))
+  else
+    echo "FAIL"
+  fi
+done
+
+echo "=== Result: ${success}/${total} passed ==="
+[ "$success" -eq "$total" ]
