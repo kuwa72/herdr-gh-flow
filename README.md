@@ -1,4 +1,4 @@
-# herdr-gh-flow
+# lead-cli
 
 GitHub Issue駆動 × TDD × Herdr × マルチコーディングエージェント連携ワークフロー CLI。
 

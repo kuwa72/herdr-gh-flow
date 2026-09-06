@@ -1,8 +1,8 @@
 # RFC: テスタビリティ向上と堅牢化のためのシェルスクリプト脱却・実装言語移行検討
 
-- **Issue**: [#22](https://github.com/kuwa72/herdr-gh-flow/issues/22)
-- **親トラッキングIssue**: [#29](https://github.com/kuwa72/herdr-gh-flow/issues/29)
-- **統合先Issue**: [#16 RFC: hgfの提供形態・基本UX方針の確定](https://github.com/kuwa72/herdr-gh-flow/issues/16)
+- **Issue**: [#22](https://github.com/kuwa72/lead-cli/issues/22)
+- **親トラッキングIssue**: [#29](https://github.com/kuwa72/lead-cli/issues/29)
+- **統合先Issue**: [#16 RFC: leadの提供形態・基本UX方針の確定](https://github.com/kuwa72/lead-cli/issues/16)
 - **ステータス**: Proposal / RFC
 - **更新日**: 2026-09-06
 
@@ -10,7 +10,7 @@
 
 ## 1. 背景と目的
 
-現在の `bin/hgf` は約 227 行の単一 bash スクリプトとして実装されている。Issue 選択・ブランチ作成・プロンプト生成・エージェント起動・CI 待機という一連のフローを `gh`, `fzf`, `jq`, `git`, `herdr` 等の外部コマンド呼び出しで実現している。
+現在の `bin/lead` は約 227 行の単一 bash スクリプトとして実装されている。Issue 選択・ブランチ作成・プロンプト生成・エージェント起動・CI 待機という一連のフローを `gh`, `fzf`, `jq`, `git`, `herdr` 等の外部コマンド呼び出しで実現している。
 
 この方式の限界は以下の通り。
 
@@ -78,7 +78,7 @@
 | 保守性・人材プール | ◎ | ◯ |
 
 **総合判断: Go を推奨。**
-`gh` 公式 Go ライブラリの存在、TUI ライブラリ `bubbletea` の完成度、クロスコンパイル・配布の容易さが、`herdr-gh-flow` の性質（GitHub CLI 連携型オーケストレータ）に最も合致する。
+`gh` 公式 Go ライブラリの存在、TUI ライブラリ `bubbletea` の完成度、クロスコンパイル・配布の容易さが、`lead-cli` の性質（GitHub CLI 連携型オーケストレータ）に最も合致する。
 
 ---
 
@@ -171,8 +171,8 @@ type PromptBuilder interface {
 
 ```
 .
-├── bin/hgf              # 移行完了後は Go バイナリへの薄いラッパーまたは削除
-├── cmd/hgf/main.go      # エントリポイント
+├── bin/lead              # 移行完了後は Go バイナリへの薄いラッパーまたは削除
+├── cmd/lead/main.go      # エントリポイント
 ├── internal/
 │   ├── cli/             # コマンドパース (cobra or 標準 flag)
 │   ├── config/          # 環境判定 (HERDR_ENV, エージェント優先順等)
@@ -191,7 +191,7 @@ type PromptBuilder interface {
 
 ### 6.1 主要フロー
 
-1. `cmd/hgf` がサブコマンドを解析。
+1. `cmd/lead` がサブコマンドを解析。
 2. `config` で `HERDR_ENV`・`gh` 認証状態・エージェント可用性を判定。
 3. `core` が Issue 選択、ブランチ名生成、プロンプト生成を制御。
 4. `adapters/gh` で Issue 一覧・本文を取得。
@@ -209,7 +209,7 @@ type PromptBuilder interface {
 
 2. **TUI テスト**
    - `IssueSelector` 等のインターフェースを介して `go-fzf` をラップし、テスト時は固定値を返すフェイク実装を注入。
-   - `go-fzf` 本体のレンダリングはライブラリ側の責務とし、`hgf` 側では「Issue 一覧 + キー入力 → 選択結果 + エージェント名」の振る舞いをアサート。
+   - `go-fzf` 本体のレンダリングはライブラリ側の責務とし、`lead` 側では「Issue 一覧 + キー入力 → 選択結果 + エージェント名」の振る舞いをアサート。
 
 3. **外部コマンドの振る舞いテスト**
    - `herdr`, `gh`, `agy` 等を一時ディレクトリにダミースクリプトとして配置し、`PATH` を注入。
@@ -227,7 +227,7 @@ type PromptBuilder interface {
 | **0** | RFC 承認（本ドキュメント） |
 | **1** | `go.mod` 作成、`internal/ports`・`internal/adapters` 整備、`gh`/`herdr`/`agent` の Adapter をテスト込みで実装 |
 | **2** | `internal/tui` を `go-fzf` で実装。外部 `fzf` コマンドへの依存を廃止し、既存 UX（[Enter]=agy, [Ctrl-D]=devin, [Ctrl-O]=opencode）をそのまま内包 |
-| **3** | `cmd/hgf` 完成、`bin/hgf` を Go バイナリに置き換え、`test/run-tests.sh` を `go test` 中心に更新 |
+| **3** | `cmd/lead` 完成、`bin/lead` を Go バイナリに置き換え、`test/run-tests.sh` を `go test` 中心に更新 |
 | **4** | `gh extension` 用エントリポイント追加、配布・CI 整備（#26 連携） |
 
 ---
@@ -244,7 +244,7 @@ type PromptBuilder interface {
 
 ## 10. 親Issue #16 へのインプット
 
-- **技術基盤**: シングルバイナリ（Go）による `hgf` 再実装が可能であること。
+- **技術基盤**: シングルバイナリ（Go）による `lead` 再実装が可能であること。
 - **UX 基盤**: `fzf` 外部コマンド依存を脱却し、`go-fzf` による組み込み選択 UI で Issue 一覧・プレビュー・エージェント同時選択を再現可能。
 - **提供形態**: `gh extension` との親和性が高く、GitHub Releases / Homebrew 等への配布も容易。
 - **後続検討事項**: ブランチ命名規約・プロンプトテンプレート・エージェント選択キーの詳細は #25, #26 で詰める。
