@@ -19,3 +19,8 @@ done
 
 echo "=== Result: ${success}/${total} passed ==="
 [ "$success" -eq "$total" ]
+
+if [ -f go.mod ]; then
+  echo "=== go test ./... ==="
+  go test ./...
+fi
